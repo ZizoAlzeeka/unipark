@@ -1,0 +1,26 @@
+# UniPark Docker ignore — keep build context small and fast
+.git
+.gitignore
+README.md
+*.md
+
+# Local dev databases
+database/*.sqlite
+database/unipark.sqlite
+
+# Local env (will be created inside container from .env.example)
+.env
+
+# IDE / OS files
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# Tests (not needed in production image)
+tests
+phpunit.xml
+.phpunit.result.cache
+
+# Vendor is rebuilt inside the builder stage
+# (we still ship it because some shared hosts need it, but Docker will use builder output)
