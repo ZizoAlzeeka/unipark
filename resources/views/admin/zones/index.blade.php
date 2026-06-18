@@ -1,0 +1,99 @@
+@extends('layouts.admin')
+
+@section('title', 'Parking Zones')
+@section('page-title', 'Parking Zones')
+@section('page-subtitle', 'Manage campus parking zones')
+
+@section('content')
+<div>
+    <div class="flex-between mb-24" style="flex-wrap:wrap;gap:12px;">
+        <div></div>
+        <a href="{{ route('admin.zones.create') }}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Add New Zone
+        </a>
+    </div>
+
+    <div class="grid grid-3" style="gap:24px;">
+        @forelse($zones as $zone)
+        @php
+            $total = $zone->spots->count();
+            $available = $zone->spots->where('status','available')->count();
+            $occupied = $zone->spots->where('status','occupied')->count();
+            $reserved = $zone->spots->where('status','reserved')->count();
+            $rate = $total > 0 ? round((($occupied + $reserved) / $total) * 100) : 0;
+            $grads = ['ZA' => 'var(--grad-primary)', 'ZB' => 'var(--grad-secondary)', 'ZC' => 'var(--grad-success)', 'ZD' => 'var(--grad-accent)'];
+        @endphp
+        <div class="zone-card">
+            <div class="zone-card-header" style="background:{{ $grads[$zone->code] ?? 'var(--grad-primary)' }};padding:24px;">
+                <span class="zone-code" style="font-size:48px;opacity:0.15;right:16px;top:8px;">{{ $zone->code }}</span>
+                <div style="color:#fff;">
+                    <div style="font-size:11px;font-weight:600;opacity:0.8;text-transform:uppercase;letter-spacing:0.8px;">Zone {{ $zone->code }}</div>
+                    <div style="font-size:20px;font-weight:800;margin-top:4px;">{{ $zone->name }}</div>
+                    @if($zone->location)
+                    <div style="font-size:12px;opacity:0.8;margin-top:4px;"><i class="fas fa-map-marker-alt"></i> {{ $zone->location }}</div>
+                    @endif
+                </div>
+            </div>
+
+            <div class="zone-card-body">
+                <div class="zone-availability" style="margin-bottom:12px;">
+                    <div class="zone-stat">
+                        <div class="zone-stat-value" style="color:var(--success);">{{ $available }}</div>
+                        <div class="zone-stat-label">Free</div>
+                    </div>
+                    <div class="zone-stat">
+                        <div class="zone-stat-value" style="color:var(--warning);">{{ $reserved }}</div>
+                        <div class="zone-stat-label">Reserved</div>
+                    </div>
+                    <div class="zone-stat">
+                        <div class="zone-stat-value" style="color:var(--danger);">{{ $occupied }}</div>
+                        <div class="zone-stat-label">Occupied</div>
+                    </div>
+                    <div class="zone-stat">
+                        <div class="zone-stat-value" style="color:var(--primary);">{{ $total }}</div>
+                        <div class="zone-stat-label">Total</div>
+                    </div>
+                </div>
+
+                <div class="progress mb-12">
+                    <div class="progress-bar {{ $rate < 50 ? 'success' : ($rate < 80 ? 'warning' : 'danger') }}" style="width:{{ $rate }}%;"></div>
+                </div>
+                <div style="font-size:12px;color:var(--text-muted);text-align:center;margin-bottom:16px;">{{ $rate }}% occupied</div>
+
+                @if($zone->description)
+                <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">{{ $zone->description }}</p>
+                @endif
+
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <span class="badge {{ $zone->is_active ? 'badge-success' : 'badge-secondary' }}">{{ $zone->is_active ? 'Active' : 'Inactive' }}</span>
+                    @if($zone->allowed_roles)
+                    <span class="badge badge-info">{{ ucfirst(implode(', ', $zone->allowed_roles)) }}</span>
+                    @endif
+                </div>
+
+                <div style="display:flex;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid var(--border-color);">
+                    <a href="{{ route('admin.zones.show', $zone->id) }}" class="btn btn-secondary btn-sm" style="flex:1;justify-content:center;">
+                        <i class="fas fa-eye"></i> View
+                    </a>
+                    <a href="{{ route('admin.zones.edit', $zone->id) }}" class="btn btn-warning btn-sm" style="flex:1;justify-content:center;">
+                        <i class="fas fa-edit"></i> Edit
+                    </a>
+                    <form action="{{ route('admin.zones.destroy', $zone->id) }}" method="POST" onsubmit="return confirm('Delete zone {{ $zone->name }}?')" style="display:inline;">
+                        @csrf @method('DELETE')
+                        <button type="submit" class="btn-action-delete" title="Delete">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        @empty
+        <div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--text-muted);">
+            <i class="fas fa-map" style="font-size:48px;margin-bottom:16px;display:block;opacity:0.2;"></i>
+            <div style="font-size:18px;font-weight:700;margin-bottom:8px;">No zones yet</div>
+            <a href="{{ route('admin.zones.create') }}" class="btn btn-primary mt-12">Add First Zone</a>
+        </div>
+        @endforelse
+    </div>
+</div>
+@endsection
