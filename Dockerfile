@@ -76,6 +76,12 @@ WORKDIR /var/www/html
 # --------------------------------------------
 COPY . .
 
+# Clean any stale Laravel bootstrap cache that may have leaked into the
+# build context (services.php / packages.php from a dev machine). These
+# files reference dev-only packages (Collision, Ignition, Sail) which
+# are NOT installed with --no-dev and would crash artisan at runtime.
+RUN rm -f bootstrap/cache/services.php bootstrap/cache/packages.php
+
 # Install PHP dependencies WITHOUT running artisan scripts.
 # Reason: artisan commands need a DB connection (CACHE_DRIVER=database),
 # which is NOT available at build time. The entrypoint will run

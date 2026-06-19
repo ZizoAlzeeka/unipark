@@ -43,6 +43,16 @@ if [ ! -f /var/www/html/.env ]; then
 fi
 
 # --------------------------------------------
+# 3.5) Clean any stale Laravel bootstrap cache (defensive).
+# These files reference dev-only service providers (Collision, Ignition,
+# Sail) that are NOT installed with --no-dev. If they leak in from the
+# build context, every artisan command crashes with
+# "Class NunoMaduro\Collision\Adapters\Laravel\CollisionServiceProvider not found".
+# `config:cache` will regenerate them at the end of this script.
+# --------------------------------------------
+rm -f /var/www/html/bootstrap/cache/services.php /var/www/html/bootstrap/cache/packages.php
+
+# --------------------------------------------
 # 4) Helper: set or replace env var in .env
 # --------------------------------------------
 set_env_var() {
