@@ -22,5 +22,13 @@ tests
 phpunit.xml
 .phpunit.result.cache
 
-# Vendor is rebuilt inside the builder stage
-# (we still ship it because some shared hosts need it, but Docker will use builder output)
+# IMPORTANT: vendor/ is rebuilt inside the container by composer install.
+# Do NOT ship the local vendor/ — it bloats the build context by ~100MB.
+vendor
+node_modules
+
+# Build artifacts
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/logs/*.log

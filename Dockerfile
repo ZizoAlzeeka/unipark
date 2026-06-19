@@ -1,43 +1,46 @@
 # ============================================
 # UniPark - Smart Campus Parking System
-# Dockerfile optimized for Coolify / Render / VPS
-# Build: 2026-06-18-v1
+# Lightweight Dockerfile for Coolify (low-memory VPS friendly)
+# Build: 2026-06-19-v2
 # ============================================
 
-FROM php:8.2-apache AS base
+FROM php:8.2-apache
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# --------------------------------------------
+# 1) System dependencies (minimal)
+# --------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     libpng-dev \
     libonig-dev \
     libxml2-dev \
     libzip-dev \
-    libcurl4-openssl-dev \
-    libicu-dev \
     zip \
     unzip \
     default-mysql-client \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PHP extensions required by Laravel + MySQL + DomPDF + Excel
+# --------------------------------------------
+# 2) PHP extensions (only what the project needs)
+#    - intl is REMOVED (heavy, not required by composer.json)
+#    - mysqli REMOVED (Laravel uses pdo_mysql only)
+# --------------------------------------------
 RUN docker-php-ext-install \
     pdo_mysql \
-    mysqli \
     mbstring \
     exif \
     pcntl \
     bcmath \
     gd \
     zip \
-    curl \
-    opcache \
-    intl
+    opcache
 
-# Configure PHP for production
-RUN echo "upload_max_filesize = 30M" >> /usr/local/etc/php/conf.d/custom.ini \
+# --------------------------------------------
+# 3) PHP production config
+# --------------------------------------------
+RUN echo "upload_max_filesize = 30M" > /usr/local/etc/php/conf.d/custom.ini \
     && echo "post_max_size = 35M" >> /usr/local/etc/php/conf.d/custom.ini \
     && echo "memory_limit = 256M" >> /usr/local/etc/php/conf.d/custom.ini \
     && echo "max_execution_time = 180" >> /usr/local/etc/php/conf.d/custom.ini \
@@ -45,46 +48,44 @@ RUN echo "upload_max_filesize = 30M" >> /usr/local/etc/php/conf.d/custom.ini \
     && echo "opcache.memory_consumption = 128" >> /usr/local/etc/php/conf.d/custom.ini \
     && echo "opcache.interned_strings_buffer = 8" >> /usr/local/etc/php/conf.d/custom.ini
 
-# Enable Apache modules
+# --------------------------------------------
+# 4) Apache configuration
+# --------------------------------------------
 RUN a2enmod rewrite headers deflate expires
 
-# Configure Apache DocumentRoot to Laravel's public directory
-ENV APACHE_DOCUMENT_ROOT /var/www/html/public
+ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/000-default.conf \
     && sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf
 
-# Allow .htaccess overrides
-RUN echo '<Directory /var/www/html/public>\n\
+RUN printf '<Directory /var/www/html/public>\n\
     AllowOverride All\n\
     Require all granted\n\
-</Directory>' >> /etc/apache2/apache2.conf
+</Directory>\n' >> /etc/apache2/apache2.conf
 
-# Set ServerName to suppress AH00558 warning
 RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 
-# Set working directory
-WORKDIR /var/www/html
-
-# ============================================
-# Build Stage - Install Dependencies
-# ============================================
-FROM base AS builder
-
-# Install Composer
+# --------------------------------------------
+# 5) Composer (installed once, used for autoload)
+# --------------------------------------------
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
-# Copy the application (artisan needed for post-autoload scripts)
+WORKDIR /var/www/html
+
+# --------------------------------------------
+# 6) Copy application FIRST (so we can install deps)
+# --------------------------------------------
 COPY . .
 
-# Install PHP dependencies (no dev in production).
-# IMPORTANT: --no-scripts prevents `php artisan package:discover` from running
-# during the build. Artisan commands need a working DB connection (because the
-# project uses CACHE_DRIVER=database), which is NOT available at build time.
-# The entrypoint will run `config:cache` etc. at container start instead.
+# Install PHP dependencies WITHOUT running artisan scripts.
+# Reason: artisan commands need a DB connection (CACHE_DRIVER=database),
+# which is NOT available at build time. The entrypoint will run
+# config:cache / route:cache / view:cache at container start instead.
 RUN composer install --no-dev --optimize-autoloader --no-interaction --no-progress --no-scripts \
     && composer dump-autoload --no-dev --optimize --no-scripts
 
-# Ensure storage and bootstrap cache directories exist with correct permissions
+# --------------------------------------------
+# 7) Prepare storage / bootstrap cache dirs
+# --------------------------------------------
 RUN mkdir -p storage/framework/sessions \
     && mkdir -p storage/framework/views \
     && mkdir -p storage/framework/cache \
@@ -93,38 +94,26 @@ RUN mkdir -p storage/framework/sessions \
     && mkdir -p storage/logs \
     && mkdir -p bootstrap/cache
 
-# ============================================
-# Production Stage
-# ============================================
-FROM base AS production
-
-# Install Composer (needed for autoload in entrypoint)
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-
-# Copy application from builder
-COPY --from=builder /var/www/html /var/www/html
-
-# Set proper permissions
+# --------------------------------------------
+# 8) Permissions
+# --------------------------------------------
 RUN chown -R www-data:www-data /var/www/html \
-    && chmod -R 755 /var/www/html/storage \
-    && chmod -R 755 /var/www/html/bootstrap/cache
+    && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
-# Copy the entrypoint script
+# --------------------------------------------
+# 9) Entrypoint
+# --------------------------------------------
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Coolify / Render provide PORT env variable — default to 80
+# --------------------------------------------
+# 10) Port + Healthcheck
+# --------------------------------------------
 ENV PORT=80
-
-# Expose the port
 EXPOSE ${PORT}
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/ || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
+    CMD curl -fsS http://localhost:${PORT}/ || exit 1
 
-# Entry point
 ENTRYPOINT ["docker-entrypoint.sh"]
-
-# Default command
 CMD ["apache2-foreground"]
