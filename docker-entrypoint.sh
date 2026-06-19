@@ -91,6 +91,15 @@ echo ">> Syncing environment variables to .env file..."
 [ -n "$MAIL_MAILER" ] && set_env_var "MAIL_MAILER" "$MAIL_MAILER"
 [ -n "$GOOGLE_MAPS_API_KEY" ] && set_env_var "GOOGLE_MAPS_API_KEY" "$GOOGLE_MAPS_API_KEY"
 [ -n "$UNIVERSITY_EMAIL_DOMAIN" ] && set_env_var "UNIVERSITY_EMAIL_DOMAIN" "$UNIVERSITY_EMAIL_DOMAIN"
+[ -n "$MAIL_HOST" ] && set_env_var "MAIL_HOST" "$MAIL_HOST"
+[ -n "$MAIL_PORT" ] && set_env_var "MAIL_PORT" "$MAIL_PORT"
+[ -n "$MAIL_USERNAME" ] && set_env_var "MAIL_USERNAME" "$MAIL_USERNAME"
+[ -n "$MAIL_PASSWORD" ] && set_env_var "MAIL_PASSWORD" "$MAIL_PASSWORD"
+[ -n "$MAIL_ENCRYPTION" ] && set_env_var "MAIL_ENCRYPTION" "$MAIL_ENCRYPTION"
+[ -n "$MAIL_FROM_ADDRESS" ] && set_env_var "MAIL_FROM_ADDRESS" "$MAIL_FROM_ADDRESS"
+[ -n "$MAIL_FROM_NAME" ] && set_env_var "MAIL_FROM_NAME" "$MAIL_FROM_NAME"
+[ -n "$BROADCAST_DRIVER" ] && set_env_var "BROADCAST_DRIVER" "$BROADCAST_DRIVER"
+[ -n "$SESSION_LIFETIME" ] && set_env_var "SESSION_LIFETIME" "$SESSION_LIFETIME"
 
 # --------------------------------------------
 # 6) Generate APP_KEY if missing
