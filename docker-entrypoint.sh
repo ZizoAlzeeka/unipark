@@ -1,59 +1,68 @@
 #!/bin/bash
-set -e
+# UniPark docker entrypoint — fault tolerant.
+#
+# IMPORTANT: We intentionally DO NOT use `set -e` here.
+# If migrations/seeders fail (e.g. DB not ready yet), we still want Apache
+# to start so the container stays alive and the user can see the actual
+# Laravel error page in the browser. Otherwise the container dies and
+# Coolify shows a useless "no such object" error during healthcheck.
 
 echo "============================================"
 echo " UniPark - Smart Campus Parking - Starting"
 echo "============================================"
 
-# Configure Apache to listen on the PORT provided (Coolify/Render/VPS)
+# --------------------------------------------
+# 1) Configure Apache to listen on the PORT env var
+# --------------------------------------------
 RENDER_PORT="${PORT:-80}"
 echo ">> Configuring Apache to listen on port $RENDER_PORT..."
-sed -i "s/Listen 80/Listen $RENDER_PORT/" /etc/apache2/ports.conf
-sed -i "s/<VirtualHost \*:80>/<VirtualHost *:$RENDER_PORT>/" /etc/apache2/sites-available/000-default.conf
+sed -i "s/^Listen .*/Listen $RENDER_PORT/" /etc/apache2/ports.conf
+sed -i "s/<VirtualHost \*:[0-9]*>/<VirtualHost *:$RENDER_PORT>/" /etc/apache2/sites-available/000-default.conf
 
-# Wait for MySQL to be ready using a simple PDO check
-echo ">> Checking MySQL connection..."
-MAX_RETRIES=30
-RETRY_COUNT=0
+# --------------------------------------------
+# 2) Show environment (for debugging, secrets masked)
+# --------------------------------------------
+echo ">> Environment check:"
+echo "   - DB_HOST=${DB_HOST:-(not set)}"
+echo "   - DB_PORT=${DB_PORT:-(not set)}"
+echo "   - DB_DATABASE=${DB_DATABASE:-(not set)}"
+echo "   - DB_USERNAME=${DB_USERNAME:-(not set)}"
+[ -n "$DB_PASSWORD" ] && echo "   - DB_PASSWORD=***set***" || echo "   - DB_PASSWORD=(not set)"
 
-while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if php -r "new PDO('mysql:host='.getenv('DB_HOST').';port='.getenv('DB_PORT').';dbname='.getenv('DB_DATABASE'), getenv('DB_USERNAME'), getenv('DB_PASSWORD'));" 2>/dev/null; then
-        echo ">> MySQL connection established!"
-        break
-    fi
-
-    RETRY_COUNT=$((RETRY_COUNT + 1))
-    echo ">> Waiting for MySQL... (attempt $RETRY_COUNT/$MAX_RETRIES)"
-    sleep 3
-done
-
-if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-    echo ">> WARNING: Could not verify MySQL connection, continuing anyway..."
-fi
-
-# Create .env file from .env.example if it doesn't exist
+# --------------------------------------------
+# 3) Create .env from .env.example (if missing)
+# --------------------------------------------
 if [ ! -f /var/www/html/.env ]; then
-    echo ">> Creating .env file from .env.example..."
-    cp /var/www/html/.env.example /var/www/html/.env
+    if [ -f /var/www/html/.env.example ]; then
+        echo ">> Creating .env from .env.example..."
+        cp /var/www/html/.env.example /var/www/html/.env
+    else
+        echo ">> WARNING: No .env or .env.example found, creating empty .env"
+        touch /var/www/html/.env
+    fi
 fi
 
-# IMPORTANT: Sync environment variables into .env file.
-# Docker/Compose passes env vars to the container, but Laravel reads from .env file.
-echo ">> Syncing environment variables to .env file..."
-
-# Helper function: replace or add a key in .env
+# --------------------------------------------
+# 4) Helper: set or replace env var in .env
+# --------------------------------------------
 set_env_var() {
     local key="$1"
     local value="$2"
     local envfile="/var/www/html/.env"
+    # Escape forward slashes in value for sed
+    local escaped_value
+    escaped_value=$(printf '%s' "$value" | sed 's/[&/\]/\\&/g')
     if grep -q "^${key}=" "$envfile"; then
-        sed -i "s|^${key}=.*|${key}=${value}|" "$envfile"
+        sed -i "s|^${key}=.*|${key}=${escaped_value}|" "$envfile"
     else
         echo "${key}=${value}" >> "$envfile"
     fi
 }
 
-# Sync critical Laravel env vars from container environment
+# --------------------------------------------
+# 5) Sync environment variables from container → .env
+# --------------------------------------------
+echo ">> Syncing environment variables to .env file..."
 [ -n "$APP_NAME" ] && set_env_var "APP_NAME" "$APP_NAME"
 [ -n "$APP_ENV" ] && set_env_var "APP_ENV" "$APP_ENV"
 [ -n "$APP_DEBUG" ] && set_env_var "APP_DEBUG" "$APP_DEBUG"
@@ -70,61 +79,88 @@ set_env_var() {
 [ -n "$FILESYSTEM_DISK" ] && set_env_var "FILESYSTEM_DISK" "$FILESYSTEM_DISK"
 [ -n "$LOG_CHANNEL" ] && set_env_var "LOG_CHANNEL" "$LOG_CHANNEL"
 [ -n "$MAIL_MAILER" ] && set_env_var "MAIL_MAILER" "$MAIL_MAILER"
-[ -n "$MAIL_HOST" ] && set_env_var "MAIL_HOST" "$MAIL_HOST"
-[ -n "$MAIL_PORT" ] && set_env_var "MAIL_PORT" "$MAIL_PORT"
-[ -n "$MAIL_USERNAME" ] && set_env_var "MAIL_USERNAME" "$MAIL_USERNAME"
-[ -n "$MAIL_PASSWORD" ] && set_env_var "MAIL_PASSWORD" "$MAIL_PASSWORD"
-[ -n "$MAIL_ENCRYPTION" ] && set_env_var "MAIL_ENCRYPTION" "$MAIL_ENCRYPTION"
-[ -n "$MAIL_FROM_ADDRESS" ] && set_env_var "MAIL_FROM_ADDRESS" "$MAIL_FROM_ADDRESS"
-[ -n "$MAIL_FROM_NAME" ] && set_env_var "MAIL_FROM_NAME" "$MAIL_FROM_NAME"
 [ -n "$GOOGLE_MAPS_API_KEY" ] && set_env_var "GOOGLE_MAPS_API_KEY" "$GOOGLE_MAPS_API_KEY"
 [ -n "$UNIVERSITY_EMAIL_DOMAIN" ] && set_env_var "UNIVERSITY_EMAIL_DOMAIN" "$UNIVERSITY_EMAIL_DOMAIN"
 
-# Generate application key ONLY if .env file does not already have a valid APP_KEY
+# --------------------------------------------
+# 6) Generate APP_KEY if missing
+# --------------------------------------------
 CURRENT_KEY=$(grep -E "^APP_KEY=base64:" /var/www/html/.env 2>/dev/null | head -1 | cut -d= -f2-)
 if [ -z "$CURRENT_KEY" ]; then
-    echo ">> Generating application key..."
-    php /var/www/html/artisan key:generate --force
+    echo ">> Generating APP_KEY..."
+    php /var/www/html/artisan key:generate --force || echo ">> WARNING: key:generate failed"
 else
-    echo ">> APP_KEY already set in .env, skipping generation"
+    echo ">> APP_KEY already set"
     export APP_KEY="$CURRENT_KEY"
 fi
 
-# Run database migrations
-echo ">> Running database migrations..."
-php /var/www/html/artisan migrate --force
+# --------------------------------------------
+# 7) Wait for MySQL (soft check, doesn't block forever)
+# --------------------------------------------
+echo ">> Checking MySQL connection..."
+MYSQL_READY=0
+MAX_RETRIES=20
+RETRY_COUNT=0
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if php -r "new PDO('mysql:host='.getenv('DB_HOST').';port='.getenv('DB_PORT').';dbname='.getenv('DB_DATABASE'), getenv('DB_USERNAME'), getenv('DB_PASSWORD'));" 2>/dev/null; then
+        echo ">> MySQL connection established!"
+        MYSQL_READY=1
+        break
+    fi
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    echo ">> Waiting for MySQL... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+    sleep 3
+done
 
-# Check if we should run seeders (only if users table is empty)
-USER_COUNT=$(php -r "
+if [ $MYSQL_READY -eq 0 ]; then
+    echo ">> WARNING: Could not connect to MySQL after $MAX_RETRIES attempts."
+    echo ">> Apache will still start — Laravel will show its own error page."
+fi
+
+# --------------------------------------------
+# 8) Run migrations (best-effort, don't crash container)
+# --------------------------------------------
+if [ $MYSQL_READY -eq 1 ]; then
+    echo ">> Running database migrations..."
+    php /var/www/html/artisan migrate --force || echo ">> WARNING: migrate failed, continuing anyway"
+
+    echo ">> Checking if seeders should run..."
+    USER_COUNT=$(php -r "
 \$pdo = new PDO('mysql:host='.getenv('DB_HOST').';port='.getenv('DB_PORT').';dbname='.getenv('DB_DATABASE'), getenv('DB_USERNAME'), getenv('DB_PASSWORD'));
 echo \$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
 " 2>/dev/null || echo "0")
-if [ "$USER_COUNT" = "0" ] || [ -z "$USER_COUNT" ]; then
-    echo ">> Running database seeders..."
-    php /var/www/html/artisan db:seed --force
+    if [ "$USER_COUNT" = "0" ] || [ -z "$USER_COUNT" ]; then
+        echo ">> Running database seeders..."
+        php /var/www/html/artisan db:seed --force || echo ">> WARNING: db:seed failed, continuing anyway"
+    else
+        echo ">> Database already seeded ($USER_COUNT users found), skipping"
+    fi
+
+    echo ">> Optimizing application for production..."
+    php /var/www/html/artisan config:cache 2>/dev/null || echo ">> WARNING: config:cache failed"
+    php /var/www/html/artisan route:cache 2>/dev/null || echo ">> WARNING: route:cache failed"
+    php /var/www/html/artisan view:cache 2>/dev/null || echo ">> WARNING: view:cache failed"
 else
-    echo ">> Database already seeded ($USER_COUNT users found), skipping seeders..."
+    echo ">> Skipping migrations/seeders/cache (no DB connection)"
 fi
 
-# Clear and cache config/routes for production
-echo ">> Optimizing application for production..."
-php /var/www/html/artisan config:cache
-php /var/www/html/artisan route:cache
-php /var/www/html/artisan view:cache
-
-# Ensure storage link exists
+# --------------------------------------------
+# 9) Storage link + permissions
+# --------------------------------------------
 echo ">> Creating storage link..."
 php /var/www/html/artisan storage:link --force 2>/dev/null || true
 
-# Fix permissions one more time
 echo ">> Setting final permissions..."
-chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
-chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache 2>/dev/null || true
+chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache 2>/dev/null || true
 
 echo "============================================"
 echo " UniPark is ready!"
 echo " Listening on port $RENDER_PORT"
+echo " MySQL: $([ $MYSQL_READY -eq 1 ] && echo 'connected' || echo 'NOT connected')"
 echo "============================================"
 
-# Execute the main process (Apache)
+# --------------------------------------------
+# 10) Start Apache (main process — must never exit)
+# --------------------------------------------
 exec "$@"
