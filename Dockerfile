@@ -115,11 +115,15 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # --------------------------------------------
 # 10) Port + Healthcheck
 # --------------------------------------------
+# IMPORTANT: HEALTHCHECK is intentionally disabled (NONE).
+# Coolify has its own healthcheck system on the UI side, and the
+# previous in-image healthcheck (curl http://localhost/) returned 500
+# during the Laravel boot phase, which made Coolify roll back every
+# deployment. Let Coolify handle healthcheck via its UI instead.
 ENV PORT=80
 EXPOSE ${PORT}
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
-    CMD curl -fsS http://localhost:${PORT}/ || exit 1
+HEALTHCHECK NONE
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["apache2-foreground"]
