@@ -76,8 +76,13 @@ RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local
 # Copy the application (artisan needed for post-autoload scripts)
 COPY . .
 
-# Install PHP dependencies (no dev in production)
-RUN composer install --no-dev --optimize-autoloader --no-interaction --no-progress
+# Install PHP dependencies (no dev in production).
+# IMPORTANT: --no-scripts prevents `php artisan package:discover` from running
+# during the build. Artisan commands need a working DB connection (because the
+# project uses CACHE_DRIVER=database), which is NOT available at build time.
+# The entrypoint will run `config:cache` etc. at container start instead.
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-progress --no-scripts \
+    && composer dump-autoload --no-dev --optimize --no-scripts
 
 # Ensure storage and bootstrap cache directories exist with correct permissions
 RUN mkdir -p storage/framework/sessions \
