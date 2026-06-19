@@ -5,7 +5,7 @@
 # If migrations/seeders fail (e.g. DB not ready yet), we still want Apache
 # to start so the container stays alive and the user can see the actual
 # Laravel error page in the browser. Otherwise the container dies and
-# Coolify shows a useless "no such object" error during healthcheck.
+# Coolify shows a useless "no such object" error during uptime probing.
 
 echo "============================================"
 echo " UniPark - Smart Campus Parking - Starting"

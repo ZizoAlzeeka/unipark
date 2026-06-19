@@ -113,13 +113,12 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # --------------------------------------------
-# 10) Port + Healthcheck
+# 10) Port
 # --------------------------------------------
-# IMPORTANT: No HEALTHCHECK instruction is set in the Dockerfile.
-# Coolify has its own healthcheck system on the UI side. Setting
-# HEALTHCHECK here (even `HEALTHCHECK NONE`) makes Coolify try to
-# query `.State.Health.Status`, which fails for NONE deployments.
-# Let Coolify handle healthcheck via its UI instead.
+# Note: Coolify handles uptime probing via its own UI; no in-image
+# probe is defined here so Coolify does not try to poll
+# .State.Health.Status (which only exists when an in-image probe
+# is set).
 ENV PORT=80
 EXPOSE ${PORT}
 
