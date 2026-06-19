@@ -12,9 +12,12 @@ echo " UniPark - Smart Campus Parking - Starting"
 echo "============================================"
 
 # --------------------------------------------
-# 1) Configure Apache to listen on the PORT env var
+# 1) Configure Apache to listen on port 80 (fixed)
+#    The PORT env var from Coolify is intentionally IGNORED here —
+#    we hardcode 80 so it always matches EXPOSE 80 in the Dockerfile
+#    and the Port setting configured in Coolify UI.
 # --------------------------------------------
-RENDER_PORT="${PORT:-80}"
+RENDER_PORT=80
 echo ">> Configuring Apache to listen on port $RENDER_PORT..."
 sed -i "s/^Listen .*/Listen $RENDER_PORT/" /etc/apache2/ports.conf
 sed -i "s/<VirtualHost \*:[0-9]*>/<VirtualHost *:$RENDER_PORT>/" /etc/apache2/sites-available/000-default.conf

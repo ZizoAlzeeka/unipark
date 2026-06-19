@@ -113,14 +113,14 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # --------------------------------------------
-# 10) Port
+# 10) Port (fixed to 80, must match Coolify UI Port setting)
 # --------------------------------------------
 # Note: Coolify handles uptime probing via its own UI; no in-image
 # probe is defined here so Coolify does not try to poll
 # .State.Health.Status (which only exists when an in-image probe
 # is set).
 ENV PORT=80
-EXPOSE ${PORT}
+EXPOSE 80
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["apache2-foreground"]
